@@ -1,25 +1,18 @@
 
-/* ================= MODE ONLINE (PHP + MySQL) ================= */
-const ONLINE_API='api/api.php';
+/* ================= MODE OFFLINE / LOCAL STORAGE ================= */
+const ONLINE_API=null;
 let cloudHydrating=false;
 let cloudOnline=false;
-async function cloudCall(action,payload={}){
-  const r=await fetch(ONLINE_API,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...payload})});
-  let j={};try{j=await r.json()}catch{}
-  if(!r.ok||!j.ok) throw new Error(j.message||'Server tidak dapat dihubungi.');
-  return j;
-}
-function stateBaseFromKey(k){
-  const bases=[BASE,PROFILE_KEY,TARGET_KEY,NOTIF_KEY,ACHIEVEMENT_KEY,'theme'];
-  for(const b of bases){if(k===b)return b; if(k.startsWith(b+'_'))return b;}
-  return null;
-}
+
+const ACCOUNTS_KEY='akunCatatanKeuangan';
+function readAccounts(){try{return JSON.parse(localStorage.getItem(ACCOUNTS_KEY))||{}}catch{return {}}}
+function saveAccounts(a){localStorage.setItem(ACCOUNTS_KEY,JSON.stringify(a))}
+function normalizeUsername(u){return String(u||'').trim().toLowerCase()}
+function localAccount(u){return readAccounts()[normalizeUsername(u)]||null}
+function hashLite(v){let h=2166136261;for(let i=0;i<String(v).length;i++){h^=String(v).charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(16).padStart(8,'0')}
+
 const _lsSetItem=localStorage.setItem.bind(localStorage);
-localStorage.setItem=function(k,v){_lsSetItem(k,v);const base=stateBaseFromKey(k);if(base&&!cloudHydrating&&cloudOnline&&currentUser()!=='guest'){cloudCall('state_save',{key:base,value:v}).catch(()=>{});}};
-async function hydrateCloudState(){
-  if(!currentUser()||currentUser()==='guest')return;
-  try{const r=await cloudCall('state_get');cloudHydrating=true;Object.entries(r.states||{}).forEach(([k,v])=>_lsSetItem(key(k),v));cloudHydrating=false;cloudOnline=true;}catch(e){cloudHydrating=false;cloudOnline=false;}
-}
+
 const BASE='catatanKeuangan_v3';
 const ACCOUNT_KEY='akunCatatanKeuangan';
 const PROFILE_KEY='profilCatatanKeuangan';
@@ -86,7 +79,7 @@ function addTransaction(){
  notificationEvent('Pengeluaran tersimpan',`${rupiah(amount)} untuk ${name} berhasil disimpan.`,'success','transaction-'+date);
  const target=getTarget(); const spent=d.transactions.filter(t=>t.date===today()&&(!target.cat||target.cat==='Semua Kategori'||t.cat===target.cat)).reduce((a,t)=>a+Number(t.amount||0),0);
  if(target.amount&&spent>=Number(target.amount)*0.8&&notif().limit){const level=spent>=Number(target.amount)?'Batas pengeluaran tercapai':'Mendekati batas pengeluaran'; const msg=spent>=Number(target.amount)?`Pengeluaran hari ini ${rupiah(spent)} sudah mencapai batas ${rupiah(target.amount)}.`:`Pengeluaran hari ini ${rupiah(spent)} sudah mencapai 80% batas ${rupiah(target.amount)}.`; notifyInput(msg,spent>=Number(target.amount)?'warning':'info',level); sendDeviceNotification(level,msg,'limit-'+today());}
- if(location.pathname.endsWith('tambah.html')) setTimeout(()=>location.href='index.html',450); else renderAll();
+ if(location.pathname.endsWith('tambah.html')) setTimeout(()=>location.href='beranda.html',450); else renderAll();
 }
 function addIncome(){
  const amount=Number(document.querySelector('#incomeAmount')?.value||0), source=document.querySelector('#incomeSource')?.value.trim()||'Pemasukan';
@@ -250,166 +243,78 @@ function startAlarm(){loadNotif();setInterval(alarmTick,15000);alarmTick()}
 function toggleTheme(){const tk=key('theme');const dark=localStorage.getItem(tk)!=='dark';localStorage.setItem(tk,dark?'dark':'light');applyTheme();loadProfile()}
 function applyTheme(){document.documentElement.dataset.theme=localStorage.getItem(key('theme'))||'light'}
 function resetData(){if(confirm('Hapus semua transaksi, saldo, target, dan data profil akun ini?')){[key(BASE),key(PROFILE_KEY),key(TARGET_KEY),key(NOTIF_KEY),key(ACHIEVEMENT_KEY),key('theme')].forEach(k=>localStorage.removeItem(k));location.href='index.html'}}
-async function login(){const u=document.querySelector('#username')?.value.trim(),p=document.querySelector('#password')?.value;if(!u||!p){notifyInput('Isi username dan password terlebih dahulu.','error');return;}try{const r=await cloudCall('login',{username:u,password:p});localStorage.setItem('loggedIn',r.user.username);cloudOnline=true;await hydrateCloudState();location.href='index.html';return;}catch(e){}const accounts=read(ACCOUNT_KEY,[]);const a=accounts.find(x=>x.username===u&&x.password===p);if(!a){notifyInput('Username atau password salah.','error');return;}localStorage.setItem('loggedIn',u);if(!localStorage.getItem(key(PROFILE_KEY)))localStorage.setItem(key(PROFILE_KEY),JSON.stringify({name:a.name,email:a.email}));location.href='index.html'}
-async function register(){const name=document.querySelector('#regName')?.value.trim(),u=document.querySelector('#regUser')?.value.trim(),email=document.querySelector('#regEmail')?.value.trim(),p=document.querySelector('#regPass')?.value,q=document.querySelector('#regQuestion')?.value,a=document.querySelector('#regAnswer')?.value.trim(),pin=document.querySelector('#regPin')?.value.trim();if(!name||!u||!p||!q||!a||!pin){notifyInput('Lengkapi data akun dan verifikasi keamanan terlebih dahulu.','error');return;}if(!/^\d{6}$/.test(pin)){notifyInput('PIN keamanan harus tepat 6 angka.','error');return;}if(p.length<6){notifyInput('Password minimal 6 karakter.','error');return;}try{const r=await cloudCall('register',{name,username:u,email,password:p,securityQuestion:q,securityAnswer:a,securityPin:pin});localStorage.setItem('loggedIn',r.user.username);cloudOnline=true;await hydrateCloudState();notifyInput('Akun online berhasil dibuat.','success','Pendaftaran berhasil');setTimeout(()=>location.href='index.html',350);return;}catch(e){}const accounts=read(ACCOUNT_KEY,[]);if(accounts.some(a=>a.username===u)){notifyInput('Username sudah digunakan.','error');return;}accounts.push({name,username:u,email,password:p,securityQuestion:q,securityAnswer:a.toLowerCase(),securityPin:pin});localStorage.setItem(ACCOUNT_KEY,JSON.stringify(accounts));localStorage.setItem('loggedIn',u);localStorage.setItem(key(PROFILE_KEY),JSON.stringify({name,email}));localStorage.setItem(key(BASE),JSON.stringify({transactions:[],income:[]}));localStorage.setItem(key(TARGET_KEY),JSON.stringify({}));localStorage.setItem(key(NOTIF_KEY),JSON.stringify({limit:true,transaction:true,daily:true,time:'08:00',permission:false,last:''}));localStorage.setItem(key('theme'),'light');notifyInput('Akun berhasil dibuat.','success','Pendaftaran berhasil');setTimeout(()=>location.href='index.html',350)}
+async function login(){
+ const u=normalizeUsername(document.querySelector('#username')?.value),p=document.querySelector('#password')?.value||'';
+ if(!u||!p){notifyInput('Isi username dan password terlebih dahulu.','error');return;}
+ const a=localAccount(u);
+ if(!a || a.passwordHash!==hashLite(p)){notifyInput('Username atau password salah.','error','Login gagal');return;}
+ localStorage.setItem('loggedIn',a.username);
+ if(!localStorage.getItem(key(PROFILE_KEY))) localStorage.setItem(key(PROFILE_KEY),JSON.stringify({name:a.name,email:a.email||''}));
+ location.href='beranda.html';
+}
+function logout(){localStorage.removeItem('loggedIn');location.href='index.html'}
+function register(){
+ const name=document.querySelector('#regName')?.value.trim(),u=normalizeUsername(document.querySelector('#regUser')?.value),email=document.querySelector('#regEmail')?.value.trim(),p=document.querySelector('#regPass')?.value||'',q=document.querySelector('#regQuestion')?.value,a=document.querySelector('#regAnswer')?.value.trim(),pin=document.querySelector('#regPin')?.value.trim();
+ if(!name||!u||!email||!p||!q||!a||!pin){notifyInput('Lengkapi data akun dan verifikasi keamanan terlebih dahulu.','error');return;}
+ if(!/^\d{6}$/.test(pin)){notifyInput('PIN keamanan harus tepat 6 angka.','error');return;}
+ if(p.length<6){notifyInput('Password minimal 6 karakter.','error');return;}
+ const accounts=readAccounts();
+ if(accounts[u]){notifyInput('Username sudah digunakan.','error','Pendaftaran gagal');return;}
+ accounts[u]={name,username:u,email,passwordHash:hashLite(p),securityQuestion:q,securityAnswerHash:hashLite(a.toLowerCase()),securityPinHash:hashLite(pin),createdAt:Date.now()};
+ saveAccounts(accounts);
+ localStorage.removeItem('loggedIn');
+ notifyInput('Akun berhasil dibuat. Silakan login dengan akun baru kamu.','success','Pendaftaran berhasil');
+ setTimeout(()=>location.href='index.html',700);
+}
 
 const SECURITY_QUESTIONS={nama_ibu:'Siapa nama ibu kamu?',kota_lahir:'Di kota mana kamu lahir?',nama_sekolah:'Apa nama sekolah kamu?',hewan_favorit:'Apa hewan favorit kamu?'};
 let passwordRecoveryUser='';
-async function startPasswordRecovery(){const u=document.querySelector('#forgotUser')?.value.trim();if(!u){notifyInput('Masukkan username terlebih dahulu.','error');return;}try{const r=await cloudCall('recovery_start',{username:u});passwordRecoveryUser=u;const q=document.querySelector('#forgotQuestion');if(q)q.textContent=SECURITY_QUESTIONS[r.question]||r.question||'Pertanyaan keamanan';document.querySelector('#forgotStep1').style.display='none';document.querySelector('#forgotStep2').style.display='block';document.querySelector('#forgotStep3').style.display='none';notifyInput('Jawab pertanyaan keamanan dan masukkan PIN untuk melanjutkan.','info','Verifikasi diperlukan');return;}catch(e){}const accounts=read(ACCOUNT_KEY,[]),a=accounts.find(x=>x.username===u);if(!a){notifyInput('Username tidak ditemukan.','error');return;}if(!a.securityQuestion||!a.securityAnswer||!a.securityPin){notifyInput('Akun ini belum memiliki verifikasi keamanan. Password tidak dapat direset dari sini.','error','Verifikasi belum tersedia');return;}passwordRecoveryUser=u;const q=document.querySelector('#forgotQuestion');if(q)q.textContent=SECURITY_QUESTIONS[a.securityQuestion]||'Pertanyaan keamanan';document.querySelector('#forgotStep1').style.display='none';document.querySelector('#forgotStep2').style.display='block';document.querySelector('#forgotStep3').style.display='none';notifyInput('Jawab pertanyaan keamanan dan masukkan PIN untuk melanjutkan.','info','Verifikasi diperlukan')}
-async function verifyPasswordRecovery(){const answer=document.querySelector('#forgotAnswer')?.value.trim().toLowerCase(),pin=document.querySelector('#forgotPin')?.value.trim();if(!answer||!pin){notifyInput('Jawaban dan PIN keamanan wajib diisi.','error');return;}try{await cloudCall('recovery_verify',{answer,pin});document.querySelector('#forgotStep2').style.display='none';document.querySelector('#forgotStep3').style.display='block';notifyInput('Verifikasi keamanan berhasil. Sekarang buat password baru.','success','Terverifikasi');return;}catch(e){}const accounts=read(ACCOUNT_KEY,[]),a=accounts.find(x=>x.username===passwordRecoveryUser);if(!a||answer!==String(a.securityAnswer).toLowerCase()||pin!==String(a.securityPin)){notifyInput('Verifikasi keamanan gagal. Periksa kembali jawaban dan PIN.','error','Verifikasi ditolak');return;}document.querySelector('#forgotStep2').style.display='none';document.querySelector('#forgotStep3').style.display='block';notifyInput('Verifikasi keamanan berhasil. Sekarang buat password baru.','success','Terverifikasi')}
-async function resetPassword(){const np=document.querySelector('#newPassword')?.value||'',cp=document.querySelector('#confirmPassword')?.value||'';if(np.length<6){notifyInput('Password baru minimal 6 karakter.','error');return;}if(np!==cp){notifyInput('Konfirmasi password tidak sama.','error');return;}try{await cloudCall('recovery_reset',{password:np});passwordRecoveryUser='';notifyInput('Password berhasil diubah. Silakan login dengan password baru.','success','Password diperbarui');setTimeout(()=>location.href='login.html',700);return;}catch(e){}const accounts=read(ACCOUNT_KEY,[]),i=accounts.findIndex(x=>x.username===passwordRecoveryUser);if(i<0){notifyInput('Sesi verifikasi tidak ditemukan. Ulangi proses.','error');return;}accounts[i].password=np;localStorage.setItem(ACCOUNT_KEY,JSON.stringify(accounts));passwordRecoveryUser='';notifyInput('Password berhasil diubah. Silakan login dengan password baru.','success','Password diperbarui');setTimeout(()=>location.href='login.html',700)}
-async function logout(){try{await cloudCall('logout')}catch(e){}localStorage.removeItem('loggedIn');location.href='login.html'}
+function startPasswordRecovery(){
+ const u=normalizeUsername(document.querySelector('#forgotUser')?.value);
+ if(!u){notifyInput('Masukkan username terlebih dahulu.','error');return;}
+ const a=localAccount(u);
+ if(!a){notifyInput('Username tidak ditemukan.','error','Reset password gagal');return;}
+ passwordRecoveryUser=u;
+ const q=document.querySelector('#forgotQuestion');if(q)q.textContent=SECURITY_QUESTIONS[a.securityQuestion]||'Verifikasi keamanan akun';
+ document.querySelector('#forgotStep1').style.display='none';
+ document.querySelector('#forgotStep2').style.display='block';
+ document.querySelector('#forgotStep3').style.display='block';
+ const ans=document.querySelector('#forgotAnswer'),pin=document.querySelector('#forgotPin');if(ans)ans.style.display='block';if(pin)pin.style.display='block';
+ notifyInput('Jawab pertanyaan keamanan dan masukkan PIN 6 angka.','info','Verifikasi akun');
+}
+function verifyPasswordRecovery(){
+ const a=localAccount(passwordRecoveryUser);
+ const ans=(document.querySelector('#forgotAnswer')?.value||'').trim().toLowerCase();
+ const pin=(document.querySelector('#forgotPin')?.value||'').trim();
+ if(!a||hashLite(ans)!==a.securityAnswerHash||hashLite(pin)!==a.securityPinHash){notifyInput('Jawaban keamanan atau PIN salah.','error','Verifikasi gagal');return;}
+ document.querySelector('#forgotStep2').style.display='none';
+ document.querySelector('#forgotStep3').style.display='block';
+ const np=document.querySelector('#newPassword');if(np)np.focus();
+}
+function resetPassword(){
+ const a=localAccount(passwordRecoveryUser),np=document.querySelector('#newPassword')?.value||'',cp=document.querySelector('#confirmPassword')?.value||'';
+ if(!a){notifyInput('Sesi pemulihan tidak ditemukan.','error');return;}
+ if(np.length<6){notifyInput('Password baru minimal 6 karakter.','error');return;}
+ if(np!==cp){notifyInput('Konfirmasi password tidak sama.','error');return;}
+ const accounts=readAccounts();accounts[passwordRecoveryUser].passwordHash=hashLite(np);saveAccounts(accounts);notifyInput('Password berhasil diubah. Silakan login.','success','Password diperbarui');setTimeout(()=>location.href='index.html',800);
+}
+
+function authGuard(){
+ const page=(location.pathname.split('/').pop()||'index.html').toLowerCase();
+ const publicPages=['index.html','login.html','daftar.html','lupa-password.html'];
+ const logged=!!localStorage.getItem('loggedIn');
+ if(page==='index.html' || page==='login.html'){
+   if(logged) location.replace('beranda.html');
+   return;
+ }
+ if(!publicPages.includes(page) && !logged){
+   location.replace('index.html');
+ }
+}
+
 function renderAll(){applyTheme();renderHome();renderHistory();renderStats();loadProfile();loadTarget();loadNotif();startAlarm()}
-async function bootstrapApp(){if(localStorage.getItem('loggedIn'))await hydrateCloudState();renderAll()}
+function bootstrapApp(){authGuard();const page=(location.pathname.split('/').pop()||'index.html').toLowerCase();if(['index.html','login.html','daftar.html','lupa-password.html'].includes(page))return;renderAll()}
 document.addEventListener('DOMContentLoaded',bootstrapApp);
-
-/* ================= FITUR TAMBAHAN CATATAN DIGITAL ================= */
-function getTarget(){return read(key(TARGET_KEY),{})}
-function todayExpenseForTarget(){const d=data(),t=getTarget();let arr=d.transactions||[];if(t.cat&&t.cat!=='Semua Kategori')arr=arr.filter(x=>x.cat===t.cat);return arr.filter(x=>x.date===today()).reduce((a,x)=>a+Number(x.amount||0),0)}
-function renderTargetProgress(){
- const t=getTarget(),bar=document.querySelector('#targetProgressBar'),pct=document.querySelector('#targetProgressPct'),text=document.querySelector('#targetProgressText');if(!bar)return;
- if(!t.amount){bar.style.width='0%';if(pct)pct.textContent='Belum diatur';if(text)text.textContent='Atur target pengeluaran untuk melihat sisa batas harian.';return}
- const spent=todayExpenseForTarget(),ratio=Math.min(100,spent/t.amount*100),remain=Math.max(0,t.amount-spent);
- bar.style.width=ratio+'%';if(pct)pct.textContent=Math.round(ratio)+'% terpakai';
- if(text)text.textContent=remain>0?`${rupiah(remain)} masih tersedia hari ini${t.cat&&t.cat!=='Semua Kategori'?' · '+t.cat:''}.`:`Batas harian tercapai. Pengeluaran hari ini ${rupiah(spent)}.`;
-}
-function activityDates(){const d=data();return new Set([...(d.transactions||[]),...(d.income||[])].map(x=>x.date).filter(Boolean))}
-function expenseDates(){const d=data();return new Set((d.transactions||[]).map(x=>x.date).filter(Boolean))}
-function calculateStreak(){const set=activityDates();let cur=new Date();cur.setHours(0,0,0,0);let n=0;while(set.has(dateKey(cur))){n++;cur.setDate(cur.getDate()-1)}return n}
-function calculateExpenseStreak(){const set=expenseDates();let cur=new Date();cur.setHours(0,0,0,0);let n=0;while(set.has(dateKey(cur))){n++;cur.setDate(cur.getDate()-1)}return n}
-function countDaysWithinTarget(days=7){
- const t=getTarget();if(!t.amount)return 0;
- const d=data(),todayDate=new Date();todayDate.setHours(0,0,0,0);
- let ok=0;
- for(let i=0;i<days;i++){
-  const k=dateKey(new Date(todayDate.getFullYear(),todayDate.getMonth(),todayDate.getDate()-i));
-  const spent=(d.transactions||[]).filter(x=>x.date===k&&(!t.cat||t.cat==='Semua Kategori'||x.cat===t.cat)).reduce((a,x)=>a+Number(x.amount||0),0);
-  if(spent>0&&spent<=Number(t.amount))ok++;
- }
- return ok;
-}
-function achievementDefinitions(){return [
- {key:'first',icon:'🥉',name:'3 Catatan',desc:'Simpan minimal 3 pengeluaran'},
- {key:'seven',icon:'🔥',name:'7 Hari Konsisten',desc:'Catat pengeluaran 7 hari berturut-turut'},
- {key:'positive',icon:'💰',name:'Saldo Stabil',desc:'Minimal 3 pemasukan dan saldo tersisa ≥ 150% dari total pengeluaran'},
- {key:'target',icon:'🎯',name:'7 Hari Hemat',desc:'Pengeluaran berada dalam target selama 7 hari berbeda'},
- {key:'ten',icon:'📒',name:'25 Transaksi',desc:'Kumpulkan 25 pengeluaran'},
- {key:'thirty',icon:'⭐',name:'30 Hari Konsisten',desc:'Catat pengeluaran 30 hari berturut-turut'},
- {key:'sixty',icon:'💎',name:'60 Hari Konsisten',desc:'Catat pengeluaran 60 hari berturut-turut'},
- {key:'hundred',icon:'🏆',name:'100 Transaksi',desc:'Kumpulkan 100 pengeluaran'}
-]}
-function getUnlockedAchievements(){return read(key(ACHIEVEMENT_KEY),{})}
-function saveUnlockedAchievements(obj){localStorage.setItem(key(ACHIEVEMENT_KEY),JSON.stringify(obj))}
-function updateAchievements(){
- const d=data(),txs=d.transactions||[],streak=calculateExpenseStreak(),t=getTarget(),total=txs.reduce((a,x)=>a+Number(x.amount||0),0),income=(d.income||[]).reduce((a,x)=>a+Number(x.amount||0),0);
- const incomeCount=(d.income||[]).length;
- const conditions={
-  first:txs.length>=3,
-  seven:streak>=7,
-  positive:incomeCount>=3&&total>0&&income>=total*1.5,
-  target:countDaysWithinTarget(7)>=7,
-  ten:txs.length>=25,
-  thirty:streak>=30,
-  sixty:streak>=60,
-  hundred:txs.length>=100
- };
- const unlocked=getUnlockedAchievements();let changed=false;const newly=[];
- Object.keys(conditions).forEach(k=>{if(conditions[k]&&!unlocked[k]){unlocked[k]={unlockedAt:new Date().toISOString()};changed=true;newly.push(k)}});
- if(changed){saveUnlockedAchievements(unlocked);setTimeout(()=>showAchievementPopup(newly),80)}
- return unlocked;
-}
-function achievementData(){
- const unlocked=updateAchievements();
- return achievementDefinitions().map(x=>({...x,ok:!!unlocked[x.key]}));
-}
-function setStreakFlame(el,streak){
- if(!el)return;
- const level=streak<=0?'dead':streak<7?'ember':streak<14?'hot':streak<30?'inferno':streak<60?'blue':'violet';
- el.classList.remove('dead','active','ember','hot','inferno','blue','violet');
- el.classList.add(level);
- if(streak>0)el.classList.add('active');
- el.dataset.streak=streak;
- el.setAttribute('aria-label',streak>0?`Api streak ${streak} hari`:'Api streak padam');
-}
-function renderStreakAchievements(){
- const streak=calculateStreak(), sv=document.querySelector('#streakValue'),st=document.querySelector('#streakText');
- if(sv)sv.textContent=streak+' hari';
- if(st)st.textContent=streak? 'Api tetap menyala! Pertahankan streak-mu.':'Streak padam. Mulai lagi hari ini';
- setStreakFlame(document.querySelector('#homeStreakFlame'),streak);
- setStreakFlame(document.querySelector('#profileStreakFlame'),streak);
- const list=document.querySelector('#achievementList'),count=document.querySelector('#achievementCount'),val=document.querySelector('#achievementValue');const ach=achievementData(),un=ach.filter(x=>x.ok).length;
- if(count)count.textContent=un+'/'+ach.length;if(val)val.textContent=un;const track=document.querySelector('#achievementTrack');if(track)track.style.width=Math.round(un/ach.length*100)+'%';
- if(list)list.innerHTML=ach.map(x=>`<div class="achievement-item ${x.ok?'unlocked':'locked'}"><span class="ach-icon">${x.ok?x.icon:'🔒'}</span><b>${esc(x.name)}</b><small>${esc(x.desc)}</small>${x.ok?'<em>Terbuka</em>':''}</div>`).join('');
-}
-function renderCalendar(selected){
- const grid=document.querySelector('#calendarGrid');if(!grid)return;const d=data(),now=new Date(),y=now.getFullYear(),m=now.getMonth();
- setText('calendarTitle',now.toLocaleDateString('id-ID',{month:'long',year:'numeric'}));
- const first=new Date(y,m,1),start=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate();let html='';
- for(let i=0;i<start;i++)html+='<div class="cal-day muted"></div>';
- const active=selected||today();
- for(let day=1;day<=days;day++){const k=dateKey(new Date(y,m,day));const ex=(d.transactions||[]).some(t=>t.date===k),inc=(d.income||[]).some(t=>t.date===k);html+=`<button type="button" class="cal-day ${k===today()?'today ':''}${k===active?'selected ':''}${ex?'has-expense ':''}${inc?'has-income ':''}" onclick="renderCalendar('${k}')">${day}</button>`}
- grid.innerHTML=html;const dayTx=(d.transactions||[]).filter(t=>t.date===active),dayIn=(d.income||[]).filter(t=>t.date===active),ex=dayTx.reduce((a,t)=>a+Number(t.amount||0),0),inc=dayIn.reduce((a,t)=>a+Number(t.amount||0),0);setText('calendarDetail',`${dateLabel(active)} · Pemasukan ${rupiah(inc)} · Pengeluaran ${rupiah(ex)}${dayTx.length?` · ${dayTx.length} transaksi`:''}`);
-}
-function renderBalanceChart(){
- const el=document.querySelector('#balanceChart');if(!el)return;const d=data(),days=[];for(let i=6;i>=0;i--){const x=new Date();x.setHours(0,0,0,0);x.setDate(x.getDate()-i);days.push(dateKey(x))}
- let balance=0;const all=[...(d.income||[]).map(x=>({...x,type:'in'})),...(d.transactions||[]).map(x=>({...x,type:'out'}))].sort((a,b)=>String(a.date).localeCompare(String(b.date)));
- const points=days.map(k=>{all.filter(x=>x.date<=k).forEach(x=>balance+=x.type==='in'?Number(x.amount||0):-Number(x.amount||0));return {k,b:balance}});const vals=points.map(x=>x.b),max=Math.max(...vals.map(v=>Math.abs(v)),1);
- el.innerHTML=points.map(p=>`<div class="balance-point"><span class="bp-value">${rupiah(p.b)}</span><div class="bp-line"><i style="bottom:${Math.max(0,Math.min(92,50+(p.b/max)*42))}%"></i></div><small>${localDate(p.k).toLocaleDateString('id-ID',{day:'numeric',month:'short'})}</small></div>`).join('');
-}
-function renderSmartReminderText(){
- const d=data(),has=(d.transactions||[]).some(t=>t.date===today());const t=getTarget();
- if(!has&&t.amount) return `Belum ada pengeluaran yang dicatat hari ini. Targetmu ${rupiah(t.amount)}.`;
- if(!has) return 'Belum ada pengeluaran yang dicatat hari ini. Yuk catat agar saldo tetap akurat.';
- const spent=(d.transactions||[]).filter(t=>t.date===today()).reduce((a,t)=>a+Number(t.amount||0),0);return `Hari ini kamu sudah mencatat ${rupiah(spent)} pengeluaran. Tetap pantau batas harianmu.`;
-}
-function showReminderModal(){
- const old=document.querySelector('#reminderModal');if(old)old.remove();const el=document.createElement('div');el.id='reminderModal';el.className='reminder-modal';
- el.innerHTML=`<div class="reminder-backdrop"></div><section class="reminder-card" role="dialog" aria-modal="true" aria-label="Pengingat pengeluaran"><button class="reminder-close" aria-label="Tutup">×</button><div class="reminder-icon"><span>🔔</span><i></i></div><div class="reminder-badge">PENGINGAT HARIAN</div><h2>Waktunya cek pengeluaran</h2><p>${esc(renderSmartReminderText())}</p><div class="reminder-actions"><button class="reminder-later" type="button">Nanti</button><a class="reminder-primary" href="tambah.html">＋ Catat Pengeluaran</a></div></section>`;
- document.body.appendChild(el);requestAnimationFrame(()=>el.classList.add('show'));const close=()=>{el.classList.remove('show');setTimeout(()=>el.remove(),220)};el.querySelector('.reminder-close').onclick=close;el.querySelector('.reminder-later').onclick=close;el.querySelector('.reminder-backdrop').onclick=close;
-}
-const _renderHomeExtra=renderHome;renderHome=function(){_renderHomeExtra();renderTargetProgress();renderStreakAchievements();renderCalendar()};
-const _renderStatsExtra=renderStats;renderStats=function(mode='day'){_renderStatsExtra(mode);renderBalanceChart()};
-const _loadProfileExtra=loadProfile;loadProfile=function(){_loadProfileExtra();renderStreakAchievements()};
-const _saveTargetExtra=saveTarget;saveTarget=function(){_saveTargetExtra();setTimeout(()=>{renderTargetProgress();renderStreakAchievements()},500)};
-const _addTransactionExtra=addTransaction;addTransaction=function(){_addTransactionExtra();setTimeout(()=>{renderTargetProgress();renderStreakAchievements();renderCalendar()},50)};
-const _addIncomeExtra=addIncome;addIncome=function(){_addIncomeExtra();setTimeout(()=>{renderStreakAchievements();renderCalendar()},50)};
-const _deleteTransactionExtra=deleteTransaction;deleteTransaction=function(id){_deleteTransactionExtra(id);setTimeout(()=>{renderTargetProgress();renderStreakAchievements();renderCalendar()},50)};
-
-/* ================= LIVE UPDATE =================
-   Data di-refresh saat berubah dari tab lain, saat kembali ke aplikasi,
-   dan saat hari berganti. Jadi streak, pencapaian, target, saldo, kalender,
-   riwayat, dan statistik tidak tertinggal dari data terbaru.
-*/
-let liveStatsMode='day';
-const _setStatsModeLive=setStatsMode;
-setStatsMode=function(mode,el){liveStatsMode=mode;return _setStatsModeLive(mode,el)};
-function refreshLiveUI(){
- applyTheme();
- const p=location.pathname.split('/').pop()||'index.html';
- if(p==='index.html'){
-   renderHome();renderTargetProgress();renderStreakAchievements();renderCalendar();
- }else if(p==='statistik.html'){
-   renderStats(liveStatsMode);
- }else if(p==='riwayat.html'){
-   renderHistory(historyFilter,historyQuery);
- }else if(p==='profil.html'){
-   loadProfile();renderStreakAchievements();renderTargetProgress();
- }else if(p==='target.html'){
-   loadTarget();
- }else if(p==='notifikasi.html'){
-   loadNotif();
- }
-}
-window.addEventListener('storage',function(e){
- if(e.key===key(BASE)||e.key===key(TARGET_KEY)||e.key===key(PROFILE_KEY)||e.key===key('theme')) refreshLiveUI();
-});
-window.addEventListener('focus',refreshLiveUI);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refreshLiveUI()});
-let liveDay=today();
-setInterval(()=>{
- const now=today();
- if(now!==liveDay){liveDay=now;refreshLiveUI()}
-},15000);
 
 /* ===== MODERN MICRO-INTERACTIONS v28 ===== */
 (function(){
