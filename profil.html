@@ -1,0 +1,27 @@
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Profil</title><link rel="stylesheet" href="style.css"></head><body><main class="phone profile-page">
+<div class="profile-top"><div><span class="eyebrow">AKUN SAYA</span><h1>Profil</h1><p>Kelola akun dan kebiasaan keuanganmu</p></div><div class="profile-top-icon">♙</div></div>
+<section class="profile-hero-card">
+  <div class="profile-avatar-wrap"><button class="avatar profile-avatar" id="avatar" type="button" onclick="openProfilePhotoPicker()" aria-label="Ganti foto profil">👤</button><span class="online-dot"></span><span class="avatar-edit-badge">✎</span><input id="profilePhotoInput" type="file" accept="image/png,image/jpeg,image/webp" hidden onchange="changeProfilePhoto(this)"></div>
+  <div class="profile-identity"><span class="profile-label">Nama pengguna</span><b id="profileName">Nama Pengguna</b><small id="profileEmail" class="profile-email"></small><span class="profile-status">● Akun aktif</span></div>
+  <button class="profile-photo-btn" type="button" onclick="openProfilePhotoPicker()">Ganti Foto</button>
+</section>
+<section class="profile-stats">
+  <div class="profile-streak-stat"><div class="profile-streak-flame streak-flame dead" id="profileStreakFlame" aria-hidden="true"><i class="flame-outer"></i><i class="flame-inner"></i><i class="flame-core"></i><i class="flame-glow"></i><i class="flame-ember e1"></i><i class="flame-ember e2"></i></div><span>Streak</span><b id="streakValue">0 hari</b><small>Konsistensi</small></div>
+  <div><span>Pencapaian</span><b id="achievementValue">0</b><small>Sudah terbuka</small></div>
+  <div><span>Target</span><b id="targetValue">Belum diatur</b><small>Harian</small></div>
+</section>
+<section class="card profile-achievement-summary"><div class="section-row"><div><span class="eyebrow teal">PERKEMBANGAN</span><b>Pencapaianmu</b></div><span class="achievement-count" id="achievementCount">0/8</span></div><p id="streakText" class="note">Mulai catat hari ini</p><div class="mini-achievement-track"><i id="achievementTrack"></i></div></section>
+<div class="profile-section-title">Pengaturan</div>
+<section class="card profile-menu-card">
+ <div class="modern-menu info-only"><span class="menu-icon teal-icon">🎯</span><div><b>Target Pengeluaran</b><small id="profileTargetInfo">Belum ada target harian</small></div></div>
+ <div class="modern-menu info-only"><span class="menu-icon blue-icon">◉</span><div><b>Batas Pengeluaran</b><small id="profileLimitInfo">Sisa batas hari ini belum dihitung</small></div></div>
+ <div class="modern-menu" onclick="location.href='notifikasi.html'"><span class="menu-icon purple-icon">♧</span><div><b>Notifikasi</b><small>Atur pengingat pencatatan</small></div><span class="profile-chevron">›</span></div>
+ <div class="modern-menu" onclick="toggleTheme();loadProfile()"><span class="menu-icon amber-icon">☾</span><div><b>Tema Aplikasi</b><small id="themeValue">Terang</small></div><span class="profile-chevron">›</span></div>
+ <div class="modern-menu" onclick="location.href='tentang.html'"><span class="menu-icon gray-icon">ⓘ</span><div><b>Tentang Aplikasi</b><small>Informasi Catatan Keuangan</small></div><span class="profile-chevron">›</span></div>
+</section>
+<div class="profile-section-title">Aksi akun</div>
+<a class="profile-action primary-action" href="target.html"><span>⚙</span><div><b>Atur Target Pengeluaran</b><small>Ubah nominal, kategori, dan keterangan target</small></div><span>›</span></a>
+<button class="profile-action danger-action" onclick="resetData()"><span>↺</span><div><b>Reset Data</b><small>Hapus data transaksi akun ini</small></div><span>›</span></button>
+<button class="profile-action logout-action" onclick="logout()"><span>↪</span><div><b>Keluar dari Akun</b><small>Selesaikan sesi saat ini</small></div><span>›</span></button>
+<div class="bottom"><a href="index.html"><b>⌂</b>Beranda</a><a href="riwayat.html"><b>▣</b>Riwayat</a><a href="statistik.html"><b>▥</b>Statistik</a><a href="profil.html" class="active"><b>♙</b>Profil</a></div>
+</main><script src="app.js"></script></body></html>
